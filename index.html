@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Розрахунок робочих годин з урахуванням відділень</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #ccc;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<h2>Розрахунок робочих годин з урахуванням відділень</h2>
+
+<label for="monthSelect">Виберіть місяць:</label>
+<select id="monthSelect" onchange="updateTable()">
+</select>
+
+<button onclick="exportToExcel()">Експорт в Excel</button>
+
+<table id="workHoursTable">
+    <thead>
+    <tr>
+        <th>День</th>
+        <th>Дата</th>
+        <th>Відділення</th>
+        <th>Час приходу</th>
+        <th>Час виходу</th>
+        <th>Робочі години</th>
+    </tr>
+    </thead>
+    <tbody>
+    <!-- Rows will be generated dynamically -->
+    </tbody>
+    <tfoot>
+    <tr>
+        <th colspan="5">Загальні години:</th>
+        <th id="totalHours">0.00</th>
+    </tr>
+    </tfoot>
+</table>
+
+<script>
+    const daysOfWeek = ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+    const departments = {
+        "Аркадія": { weekdays: "9:00-20:00", weekends: "10:00-20:00" },
+        "Дарниця": { weekdays: "9:00-21:00", weekends: "10:00-20:00" },
+        "Городок": { weekdays: "10:00-20:00", weekends: "10:00-20:00" },
+        "Академсіт": { weekdays: "9:00-20:00", weekends: "10:00-20:00" },
+        "Оазис": { weekdays: "9:00-20:00", weekends: "10:00-20:00" }
+    };
+
+    function roundToNearestHalfHour(minutes) {
+        return Math.round(minutes / 30) * 30;
+    }
+
+    function calculateHours(day, dayOfWeek = "") {
+        const department = document.getElementById(`department${day}`).value;
+        const isWeekend = dayOfWeek === "Нд" || dayOfWeek === "Сб";
+        console.log(isWeekend)
+        const [deptStartTime, deptEndTime] = (isWeekend ? departments[department].weekends : departments[department].weekdays).split('-').map(time => time.split(':').map(Number));
+
+        const startTime = document.getElementById(`start${day}`).value;
+        const endTime = document.getElementById(`end${day}`).value;
+
+        if (startTime && endTime) {
+            const [startHours, startMinutes] = startTime.split(':').map(Number);
+            const [endHours, endMinutes] = endTime.split(':').map(Number);
+
+            let startTotalMinutes = startHours * 60 + startMinutes;
+            let endTotalMinutes = endHours * 60 + endMinutes;
+
+            const deptStartTotalMinutes = deptStartTime[0] * 60 + deptStartTime[1];
+            const deptEndTotalMinutes = deptEndTime[0] * 60 + deptEndTime[1];
+
+            if (startTotalMinutes < deptStartTotalMinutes) {
+                startTotalMinutes = deptStartTotalMinutes;
+            }
+
+            if (endTotalMinutes < startTotalMinutes) {
+                endTotalMinutes += 24 * 60;
+            }
+
+            let workedMinutes = endTotalMinutes - startTotalMinutes;
+            workedMinutes = roundToNearestHalfHour(workedMinutes);
+            const workedHours = workedMinutes / 60;
+
+            document.getElementById(`hours${day}`).textContent = workedHours.toFixed(2);
+            calculateTotalHours();
+        }
+    }
+
+    function calculateTotalHours() {
+        let totalHours = 0;
+
+        const daysInMonth = getDaysInMonth();
+
+        for (let i = 1; i <= daysInMonth; i++) {
+            const hours = parseFloat(document.getElementById(`hours${i}`).textContent);
+            if (!isNaN(hours)) {
+                totalHours += hours;
+            }
+        }
+
+        document.getElementById('totalHours').textContent = totalHours.toFixed(2);
+    }
+
+    function updateTable() {
+        const tableBody = document.querySelector("#workHoursTable tbody");
+        tableBody.innerHTML = ""; // Clear the table
+
+        const monthSelect = document.getElementById("monthSelect");
+        const selectedMonth = monthSelect.value;
+        const selectedYear = new Date().getFullYear();
+        const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+
+        for (let i = 1; i <= daysInMonth; i++) {
+            const date = new Date(selectedYear, selectedMonth - 1, i);
+            const dayOfWeek = daysOfWeek[date.getDay()];
+
+            tableBody.insertAdjacentHTML('beforeend', `
+            <tr>
+                <td>${dayOfWeek}</td>
+                <td>${i}</td>
+                <td>
+                    <select id="department${i}" onchange="calculateHours(${i}, '${dayOfWeek}')">
+                        ${Object.keys(departments).map(department => `
+                            <option value="${department}">${department}</option>
+                        `).join('')}
+                    </select>
+                </td>
+                <td><input type="time" id="start${i}" onchange="calculateHours(${i}, '${dayOfWeek}')"></td>
+                <td><input type="time" id="end${i}" onchange="calculateHours(${i}, '${dayOfWeek}')"></td>
+                <td id="hours${i}">0.00</td>
+            </tr>
+        `);
+        }
+
+        calculateTotalHours();
+    }
+
+    function getDaysInMonth() {
+        const monthSelect = document.getElementById("monthSelect").value;
+        const year = new Date().getFullYear();
+        return new Date(year, monthSelect, 0).getDate();
+    }
+
+    function populateMonthSelect() {
+        const monthSelect = document.getElementById("monthSelect");
+        const currentMonth = new Date().getMonth() + 1;
+
+        for (let i = 1; i <= 12; i++) {
+            const option = document.createElement("option");
+            option.value = i;
+            option.textContent = new Date(0, i - 1).toLocaleString('uk', { month: 'long' });
+            if (i === currentMonth) {
+                option.selected = true;
+            }
+            monthSelect.appendChild(option);
+        }
+
+        updateTable();
+    }
+
+    function exportToExcel() {
+        const name = prompt("Введіть прізвище та ім'я", "Зубенко Михайло");
+        const monthSelect = document.getElementById("monthSelect");
+        const date = new Date(2024, monthSelect.value - 1, 1).toLocaleString('uk-UA', { month: 'long' });
+        const wb = XLSX.utils.book_new();
+        const ws_data = [[name.toString()], [`${date} ${new Date().getFullYear()}`]];
+
+        // Header Rows
+        ws_data.push(["Дні", "Аркадія", "Дарниця", "Городок", "Академсіт", "Оазис"]);
+
+        const daysInMonth = getDaysInMonth();
+
+        // Days Rows
+        for (let i = 1; i <= daysInMonth; i++) {
+            const row = [i];
+            const selectedDepartment = document.getElementById(`department${i}`).value;
+            const hours = parseFloat(document.getElementById(`hours${i}`).textContent);
+
+            for (let department of Object.keys(departments)) {
+                if (department === selectedDepartment) {
+                    row.push(hours ? hours.toFixed(2) : "0");
+                } else {
+                    row.push("0");
+                }
+            }
+            ws_data.push(row);
+        }
+
+        // Total Row
+        const totalRow = ["Всього"];
+        for (let j = 0; j < Object.keys(departments).length; j++) {
+            let total = 0;
+            for (let i = 1; i <= daysInMonth; i++) {
+                const selectedDepartment = document.getElementById(`department${i}`).value;
+                if (Object.keys(departments)[j] === selectedDepartment) {
+                    const hours = parseFloat(document.getElementById(`hours${i}`).textContent);
+                    total += hours ? hours : 0;
+                }
+            }
+            totalRow.push(total.toFixed(2));
+        }
+        ws_data.push(totalRow);
+
+        // Grand Total Row
+        ws_data.push(["Загальна кількість", totalRow.slice(1).reduce((acc, val) => acc + parseFloat(val), 0).toFixed(2), "", "", "", ""]);
+
+        // Create worksheet and add data
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+        XLSX.utils.book_append_sheet(wb, ws, "Робочі години");
+
+        // Export to file
+        XLSX.writeFile(wb, 'work_hours.xlsx', { bookType: 'xlsx', type: 'binary', charset: 'utf-8' });
+    }
+
+    window.onload = populateMonthSelect;
+</script>
+
+</body>
+</html>
